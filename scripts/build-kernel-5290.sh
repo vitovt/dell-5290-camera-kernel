@@ -18,6 +18,7 @@ DO_MENUCONFIG=0
 DO_OLDDEFCONFIG=0
 DO_INSTALL=0
 DO_NO_BUILD=0
+DO_PRINT_INSTALL_COMMAND=0
 DO_COLLECT_DEBUG=0
 DO_INSTALL_BUILD_DEPS=0
 
@@ -32,22 +33,23 @@ Defaults:
   - Copy matching .deb files into out/<abi-release>/
 
 Options:
-  --workdir <path>
-  --source-package <name>
-  --source-version <version>
+  --workdir <path>          Override the workspace used for downloads/build/output
+  --source-package <name>   Source package to build, for example linux-hwe-6.17
+  --source-version <ver>    Exact Ubuntu source version to download and package
   --kernel-ref <value>      Alias for --source-version in Ubuntu-source mode
   --local-abi <n>           Numeric ABI override for custom Ubuntu package names
   --no-local-abi            Keep Ubuntu ABI/package names and print removal hints
   --clean                   Re-extract sources and rebuild from scratch
   --full-rebuild            Alias for --clean
-  --reuse-build             Reuse existing compiled tree (default)
-  --menuconfig
-  --olddefconfig
-  --jobs <n>
-  --install
-  --no-build
-  --collect-debug
-  --install-build-deps
+  --reuse-build             Reuse existing compiled tree and prior build outputs
+  --menuconfig              Open config editor before packaging
+  --olddefconfig            Run olddefconfig in bindeb-pkg mode after seeding .config
+  --jobs <n>                Parallel build jobs passed to the package build
+  --install                 Run sudo dpkg -i on the matching built kernel packages
+  --no-build                Skip the package build step
+  --print-install-command   Print matching dpkg -i command for discovered packages
+  --collect-debug           Capture baseline debug information into results/
+  --install-build-deps      Run sudo apt-get build-dep for the selected source package
   --build-target <mode>     dpkg-buildpackage (default) or bindeb-pkg
 
 Examples:
@@ -62,6 +64,9 @@ Examples:
 
   Reuse the compiled tree and only rerun packaging/install steps:
     ./scripts/build-kernel-5290.sh --source-package linux-hwe-6.17 --source-version 6.17.0-20.20~24.04.1 --reuse-build
+
+  Print the install command for already built custom ABI packages:
+    ./scripts/build-kernel-5290.sh --source-package linux-hwe-6.17 --source-version 6.17.0-20.20~24.04.1 --print-install-command
 
   Keep the stock Ubuntu ABI/package names. This is not recommended because it
   can conflict with already installed Ubuntu kernel packages:
@@ -382,6 +387,32 @@ build_debs() {
 	esac
 }
 
+find_installable_debs() {
+	local deb
+	local artifact_root="$1"
+	local -n debs_ref="$2"
+
+	debs_ref=()
+	shopt -s nullglob
+	for deb in \
+		"${artifact_root}"/linux-image-unsigned-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-image-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-modules-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-modules-extra-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-modules-ipu6-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-modules-ipu7-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-modules-iwlwifi-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-modules-usbio-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-modules-vision-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/linux-headers-"${ABI_RELEASE}"-*.deb \
+		"${artifact_root}"/"${SOURCE_PACKAGE}"-headers-"${ABI_RELEASE}"_*.deb
+	do
+		[[ -f "${deb}" ]] || continue
+		debs_ref+=("${deb}")
+	done
+	shopt -u nullglob
+}
+
 collect_artifacts() {
 	local artifact_root name_filter
 	local found=0
@@ -404,27 +435,30 @@ collect_artifacts() {
 	fi
 }
 
+print_install_command() {
+	local -a debs=()
+	local artifact_root="${ARTIFACT_DIR:-${OUT_DIR}}"
+
+	find_installable_debs "${artifact_root}" debs
+
+	if [[ "${#debs[@]}" -eq 0 ]]; then
+		log "no installable kernel debs found in ${artifact_root}"
+		return
+	fi
+
+	printf 'sudo dpkg -i' | tee -a "${BUILD_LOG}"
+	printf ' %q' "${debs[@]}" | tee -a "${BUILD_LOG}"
+	printf '\n' | tee -a "${BUILD_LOG}"
+}
+
 install_kernel_if_requested() {
-	local deb
 	local -a debs=()
 
 	if [[ "${DO_INSTALL}" -eq 0 ]]; then
 		return
 	fi
 
-	shopt -s nullglob
-	for deb in \
-		"${ARTIFACT_DIR}"/linux-image-unsigned-"${ABI_RELEASE}"-*.deb \
-		"${ARTIFACT_DIR}"/linux-image-"${ABI_RELEASE}"-*.deb \
-		"${ARTIFACT_DIR}"/linux-modules-"${ABI_RELEASE}"-*.deb \
-		"${ARTIFACT_DIR}"/linux-modules-*-"${ABI_RELEASE}"-*.deb \
-		"${ARTIFACT_DIR}"/linux-headers-"${ABI_RELEASE}"-*.deb \
-		"${ARTIFACT_DIR}"/"${SOURCE_PACKAGE}"-headers-"${ABI_RELEASE}"_*.deb
-	do
-		[[ -f "${deb}" ]] || continue
-		debs+=("${deb}")
-	done
-	shopt -u nullglob
+	find_installable_debs "${ARTIFACT_DIR}" debs
 	[[ "${#debs[@]}" -gt 0 ]] || die "no installable kernel debs available in ${ARTIFACT_DIR}"
 
 	log "installing built kernel runtime/header packages from ${ARTIFACT_DIR}"
@@ -505,6 +539,10 @@ parse_args() {
 				DO_NO_BUILD=1
 				shift
 				;;
+			--print-install-command)
+				DO_PRINT_INSTALL_COMMAND=1
+				shift
+				;;
 			--collect-debug)
 				DO_COLLECT_DEBUG=1
 				shift
@@ -559,6 +597,16 @@ main() {
 		log "kernel-ref alias used: ${KERNEL_REF}"
 	fi
 
+	if [[ "${DO_PRINT_INSTALL_COMMAND}" -eq 1 && "${DO_NO_BUILD}" -eq 0 ]]; then
+		log "print-install-command requested; build will still run first, then the install command will be shown"
+	fi
+
+	if [[ "${DO_PRINT_INSTALL_COMMAND}" -eq 1 && "${DO_NO_BUILD}" -eq 1 ]]; then
+		print_install_command
+		post_build_summary
+		exit 0
+	fi
+
 	if [[ "${DO_COLLECT_DEBUG}" -eq 1 ]]; then
 		"${ROOT_DIR}/scripts/collect-debug-info.sh" baseline >> "${BUILD_LOG}" 2>&1 || true
 	fi
@@ -573,6 +621,7 @@ main() {
 	apply_packaging_workarounds
 	build_debs
 	collect_artifacts
+	print_install_command
 	install_kernel_if_requested
 	post_build_summary
 }
