@@ -433,6 +433,47 @@ cleanup_temporary_dkms_state() {
 	fi
 }
 
+ensure_expected_kernelrelease_build_state() {
+	local build_root build_dir abi_dir stamp_dir kernel_release_file current_release expected_release
+
+	if [[ "${BUILD_TARGET}" != "dpkg-buildpackage" ]]; then
+		return
+	fi
+
+	if [[ "${DO_NO_BUILD}" -eq 1 ]]; then
+		return
+	fi
+
+	build_root="${SOURCE_TREE}/debian/build"
+	build_dir="${build_root}/build-generic"
+	abi_dir="${build_root}/abi-generic"
+	stamp_dir="${SOURCE_TREE}/debian/stamps"
+	kernel_release_file="${build_dir}/include/config/kernel.release"
+	expected_release="${ABI_RELEASE}-generic"
+
+	if [[ ! -f "${kernel_release_file}" ]]; then
+		return
+	fi
+
+	current_release="$(<"${kernel_release_file}")"
+	if [[ "${current_release}" == "${expected_release}" ]]; then
+		log "compiled kernelrelease already matches ${expected_release}"
+		return
+	fi
+
+	log "compiled kernelrelease mismatch: found ${current_release}, expected ${expected_release}"
+	log "removing stale generic build outputs so modules and image are rebuilt for ${expected_release}"
+	rm -rf "${build_dir}" "${abi_dir}"
+	find "${stamp_dir}" -maxdepth 1 -type f \
+		\( \
+			-name 'stamp-prepare-generic' -o \
+			-name 'stamp-build-generic' -o \
+			-name 'stamp-install-generic' -o \
+			-name 'stamp-install-arch-headers' -o \
+			-name 'stamp-install-headers' \
+		\) -delete 2>/dev/null || true
+}
+
 build_debs() {
 	if [[ "${DO_NO_BUILD}" -eq 1 ]]; then
 		log "skipping build because --no-build was requested"
@@ -725,6 +766,7 @@ main() {
 	run_menuconfig_if_requested
 	apply_packaging_workarounds
 	refresh_generated_packaging_state
+	ensure_expected_kernelrelease_build_state
 	cleanup_temporary_dkms_state
 	build_debs
 	collect_artifacts
