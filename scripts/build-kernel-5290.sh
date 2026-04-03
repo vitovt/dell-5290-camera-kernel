@@ -25,6 +25,12 @@ usage() {
 	cat <<'EOF'
 usage: build-kernel-5290.sh [options]
 
+Defaults:
+  - Ubuntu source-package mode via dpkg-buildpackage
+  - Reuse existing work tree and build outputs when present
+  - Rewrite Ubuntu ABI to local ABI 999 for non-conflicting package names
+  - Copy matching .deb files into out/<abi-release>/
+
 Options:
   --workdir <path>
   --source-package <name>
@@ -43,6 +49,27 @@ Options:
   --collect-debug
   --install-build-deps
   --build-target <mode>     dpkg-buildpackage (default) or bindeb-pkg
+
+Examples:
+  Repackage the existing 6.17 tree with Ubuntu-style custom ABI 999:
+    ./scripts/build-kernel-5290.sh --source-package linux-hwe-6.17 --source-version 6.17.0-20.20~24.04.1
+
+  Same as above, but pin a different local ABI number:
+    ./scripts/build-kernel-5290.sh --source-package linux-hwe-6.17 --source-version 6.17.0-20.20~24.04.1 --local-abi 998
+
+  Force a full rebuild from a clean extracted tree:
+    ./scripts/build-kernel-5290.sh --source-package linux-hwe-6.17 --source-version 6.17.0-20.20~24.04.1 --clean
+
+  Reuse the compiled tree and only rerun packaging/install steps:
+    ./scripts/build-kernel-5290.sh --source-package linux-hwe-6.17 --source-version 6.17.0-20.20~24.04.1 --reuse-build
+
+  Keep the stock Ubuntu ABI/package names. This is not recommended because it
+  can conflict with already installed Ubuntu kernel packages:
+    ./scripts/build-kernel-5290.sh --source-package linux-hwe-6.17 --source-version 6.17.0-20.20~24.04.1 --no-local-abi
+
+Install note:
+  Do not install every .deb from out/ with 'dpkg -i *'. For boot testing, use
+  the runtime/header packages for the custom ABI from out/<abi-release>/.
 EOF
 }
 
