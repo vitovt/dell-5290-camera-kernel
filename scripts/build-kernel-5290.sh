@@ -222,6 +222,14 @@ detect_packaging_dir() {
 		return
 	fi
 
+	for candidate in "${SOURCE_TREE}"/debian.*; do
+		[[ -f "${candidate}/changelog" ]] || continue
+		if head -n 1 "${candidate}/changelog" | grep -q "^${SOURCE_PACKAGE} "; then
+			DEBIAN_DIR="${candidate}"
+			return
+		fi
+	done
+
 	for candidate in "${SOURCE_TREE}"/debian*; do
 		[[ -f "${candidate}/changelog" ]] || continue
 		if head -n 1 "${candidate}/changelog" | grep -q "^${SOURCE_PACKAGE} "; then
@@ -233,6 +241,20 @@ detect_packaging_dir() {
 	die "failed to locate packaging directory for ${SOURCE_PACKAGE}"
 }
 
+set_changelog_version() {
+	local changelog="$1"
+	local current_version
+
+	[[ -f "${changelog}" ]] || return
+	current_version="$(dpkg-parsechangelog -l"${changelog}" -S version)"
+	if [[ "${current_version}" != "${TARGET_SOURCE_VERSION}" ]]; then
+		sed -i "1s/(${current_version})/(${TARGET_SOURCE_VERSION})/" "${changelog}"
+		log "set ${changelog} package version to ${TARGET_SOURCE_VERSION}"
+	else
+		log "${changelog} already set to ${TARGET_SOURCE_VERSION}"
+	fi
+}
+
 warn_same_abi_conflicts() {
 	log "WARNING: local ABI renaming is disabled; packages will keep Ubuntu ABI ${ABI_RELEASE} and may collide with installed Ubuntu kernel packages."
 	log "WARNING: minimum image conflict removal command:"
@@ -242,17 +264,13 @@ warn_same_abi_conflicts() {
 }
 
 apply_local_abi_policy() {
-	local changelog current_version
+	local generated_changelog
 
 	detect_packaging_dir
-	changelog="${DEBIAN_DIR}/changelog"
-	current_version="$(dpkg-parsechangelog -l"${changelog}" -S version)"
-
-	if [[ "${current_version}" != "${TARGET_SOURCE_VERSION}" ]]; then
-		sed -i "1s/(${current_version})/(${TARGET_SOURCE_VERSION})/" "${changelog}"
-		log "set ${DEBIAN_DIR}/changelog package version to ${TARGET_SOURCE_VERSION}"
-	else
-		log "packaging changelog already set to ${TARGET_SOURCE_VERSION}"
+	set_changelog_version "${DEBIAN_DIR}/changelog"
+	generated_changelog="${SOURCE_TREE}/debian/changelog"
+	if [[ "${generated_changelog}" != "${DEBIAN_DIR}/changelog" ]]; then
+		set_changelog_version "${generated_changelog}"
 	fi
 
 	if [[ "${USE_LOCAL_ABI}" -eq 1 ]]; then
@@ -358,6 +376,63 @@ apply_packaging_workarounds() {
 	fi
 }
 
+refresh_generated_packaging_state() {
+	local generated_debian_dir
+
+	if [[ "${BUILD_TARGET}" != "dpkg-buildpackage" ]]; then
+		return
+	fi
+
+	generated_debian_dir="${SOURCE_TREE}/debian"
+	[[ -d "${generated_debian_dir}" ]] || return
+
+	log "refreshing generated debian/ packaging state while keeping compiled objects"
+	rm -f \
+		"${generated_debian_dir}/control" \
+		"${generated_debian_dir}/files"
+	rm -rf "${generated_debian_dir}/.debhelper"
+	find "${generated_debian_dir}/stamps" -maxdepth 1 -type f -name 'stamp-install-*' -delete 2>/dev/null || true
+	find "${generated_debian_dir}" -maxdepth 1 -type f \
+		\( \
+			-name '*.substvars' -o \
+			-name '*.debhelper.log' -o \
+			-name '*.postinst' -o \
+			-name '*.postrm' -o \
+			-name '*.preinst' -o \
+			-name '*.prerm' -o \
+			-name '*.triggers' -o \
+			-name '*.maintscript' \
+		\) -delete
+	find "${generated_debian_dir}" -maxdepth 1 -type d -name 'linux-*' -prune -exec rm -rf {} +
+
+	log "regenerating debian/control for ${TARGET_SOURCE_VERSION}"
+	(
+		cd "${SOURCE_TREE}"
+		make -f debian/rules debian/control
+	) >> "${BUILD_LOG}" 2>&1 || die "failed to regenerate debian/control"
+}
+
+cleanup_temporary_dkms_state() {
+	local build_root
+	local removed=0
+
+	if [[ "${BUILD_TARGET}" != "dpkg-buildpackage" ]]; then
+		return
+	fi
+
+	build_root="${SOURCE_TREE}/debian/build"
+	[[ -d "${build_root}" ]] || return
+
+	while IFS= read -r -d '' dkms_dir; do
+		rm -rf "${dkms_dir}"
+		removed=1
+	done < <(find "${build_root}" -type d -name '__________dkms' -print0)
+
+	if [[ "${removed}" -eq 1 ]]; then
+		log "removed temporary DKMS workspaces under ${build_root}"
+	fi
+}
+
 build_debs() {
 	if [[ "${DO_NO_BUILD}" -eq 1 ]]; then
 		log "skipping build because --no-build was requested"
@@ -422,6 +497,7 @@ collect_artifacts() {
 		name_filter="*${ABI_RELEASE}*.deb"
 	fi
 	mkdir -p "${artifact_root}"
+	find "${artifact_root}" -maxdepth 1 -type f -name "${name_filter}" -delete
 
 	while IFS= read -r -d '' deb; do
 		found=1
@@ -435,9 +511,30 @@ collect_artifacts() {
 	fi
 }
 
+cleanup_work_debs() {
+	local name_filter
+	local removed=0
+
+	name_filter='*.deb'
+	if [[ -n "${TARGET_SOURCE_VERSION:-}" ]]; then
+		name_filter="*_${TARGET_SOURCE_VERSION}_*.deb"
+	fi
+
+	while IFS= read -r -d '' deb; do
+		rm -f "${deb}"
+		removed=1
+	done < <(find "${WORKDIR}" -maxdepth 3 -type f -name "${name_filter}" -print0)
+
+	if [[ "${removed}" -eq 1 ]]; then
+		log "removed copied build .deb artifacts from ${WORKDIR}"
+	fi
+}
+
 print_install_command() {
 	local -a debs=()
 	local artifact_root="${ARTIFACT_DIR:-${OUT_DIR}}"
+	local deb
+	local deb_name
 
 	find_installable_debs "${artifact_root}" debs
 
@@ -446,9 +543,17 @@ print_install_command() {
 		return
 	fi
 
-	printf 'sudo dpkg -i' | tee -a "${BUILD_LOG}"
-	printf ' %q' "${debs[@]}" | tee -a "${BUILD_LOG}"
-	printf '\n' | tee -a "${BUILD_LOG}"
+	printf 'cd %q\n' "${artifact_root}" | tee -a "${BUILD_LOG}"
+	printf 'sudo dpkg -i \\\n' | tee -a "${BUILD_LOG}"
+	for deb in "${debs[@]}"; do
+		deb_name="$(basename "${deb}")"
+		printf '  %q' "${deb_name}" | tee -a "${BUILD_LOG}"
+		if [[ "${deb}" != "${debs[-1]}" ]]; then
+			printf ' \\\n' | tee -a "${BUILD_LOG}"
+		else
+			printf '\n' | tee -a "${BUILD_LOG}"
+		fi
+	done
 }
 
 install_kernel_if_requested() {
@@ -619,8 +724,11 @@ main() {
 	apply_patches
 	run_menuconfig_if_requested
 	apply_packaging_workarounds
+	refresh_generated_packaging_state
+	cleanup_temporary_dkms_state
 	build_debs
 	collect_artifacts
+	cleanup_work_debs
 	print_install_command
 	install_kernel_if_requested
 	post_build_summary
