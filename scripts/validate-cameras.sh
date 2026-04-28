@@ -26,13 +26,13 @@ run_shell dmesg "dmesg | grep -Ei 'INT3446|INT3472|INT3477|INT3479|ipu3|ov5670|o
 run_shell cam-list "cam -l || true"
 run_shell media-ctl "media-ctl -p || true"
 run_shell v4l2-devices "v4l2-ctl --list-devices || true"
-run_shell gst "gst-launch-1.0 libcamerasrc ! videoconvert ! fakesink || true"
+run_shell gst "timeout --signal=TERM --kill-after=5s 20s gst-launch-1.0 libcamerasrc ! videoconvert ! fakesink"
 
 cat > "${OUT_DIR}/success-criteria.txt" <<'EOF'
 Level 1: dmesg no longer shows "No board-data found for this model"
 Level 2: cam -l shows OV5670 / INT3479
 Level 3: cam -l shows OV5670 / INT3479 and OV8858 / INT3477
-Level 4: gst-launch-1.0 libcamerasrc ! videoconvert ! fakesink succeeds
+Level 4: gst-launch-1.0 libcamerasrc ! videoconvert ! fakesink succeeds within 20 seconds
 EOF
 
 printf '%s\n' "${OUT_DIR}"
