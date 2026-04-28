@@ -13,6 +13,8 @@ This repository contains:
 - a small patch set adapted for the Dell Latitude 5290 2-in-1
 - a build script that uses Ubuntu kernel source packages instead of a full
   upstream kernel git checkout
+- a small `dell-5290-camera-support` package that installs the udev rule needed
+  for libcamera to access `/dev/dma_heap/system`
 - helper scripts for diagnostics and validation
 
 The build script rewrites the Ubuntu ABI to a custom local ABI by default
@@ -66,6 +68,8 @@ What this does:
 - changes the Ubuntu ABI to a local custom ABI (`999`) so the packages do not
   collide with the stock Ubuntu kernel
 - reuses previous build artifacts automatically when possible
+- builds `dell-5290-camera-support`, which grants the desktop session access to
+  `/dev/dma_heap/system` after reboot
 - prints the exact `sudo dpkg -i ...` command at the end if the build succeeds
 
 Notes:
@@ -88,7 +92,8 @@ starts with:
 sudo dpkg -i ...
 ```
 
-Copy that command exactly and run it.
+Copy that command exactly and run it. It should install the runtime kernel
+packages, the matching headers and `dell-5290-camera-support`.
 
 Then run:
 
@@ -104,6 +109,22 @@ sudo dpkg -i *
 
 That installs unrelated helper packages too and is the easiest way to create
 dependency noise or package-name conflicts.
+
+The important packages in the printed command are:
+
+- `linux-image-unsigned-...`: the custom kernel image
+- `linux-modules-...`: base kernel modules
+- `linux-modules-extra-...`: extra modules, including patched camera/platform drivers
+- `linux-modules-ipu6-...`, `linux-modules-usbio-...`,
+  `linux-modules-vision-...`: Ubuntu split module packages used by this kernel
+- `linux-modules-iwlwifi-...`: Wi-Fi modules for this ABI
+- `linux-headers-...` and `linux-hwe-6.17-headers-...`: headers for DKMS and
+  external modules
+- `dell-5290-camera-support`: udev rule for `/dev/dma_heap/system`
+
+Other generated packages, such as `linux-tools-*`, `linux-cloud-tools-*`,
+`linux-buildinfo-*` and `linux-lib-rust-*`, are optional and are not required
+for booting this kernel or using the cameras.
 
 ### 5. Reboot
 
@@ -136,8 +157,69 @@ Run:
 ./scripts/validate-cameras.sh
 ```
 
+The validator resets the media graphs, checks both explicit cameras and writes
+logs under `results/post-patch/<timestamp>/`.
+
+For a quick visible smoke test:
+
+```bash
+media-ctl -r -d /dev/media0
+media-ctl -r -d /dev/media1
+gst-launch-1.0 libcamerasrc camera-name='\\_SB_.PCI0.LNK0' ! queue ! videoconvert ! queue ! autovideosink
+```
+
+For the back camera:
+
+```bash
+media-ctl -r -d /dev/media0
+media-ctl -r -d /dev/media1
+gst-launch-1.0 libcamerasrc camera-name='\\_SB_.PCI0.LNK1' ! queue ! videoconvert ! queue ! autovideosink
+```
+
 If you want to save a before/after comparison, the build step above already
 captured baseline debug information with `--collect-debug`.
+
+## Desktop Applications
+
+Applications that use GStreamer/libcamera directly should work with the system
+`libcamera` package. The fallback `uncalibrated.yaml` messages are expected for
+this hardware and do not prevent the cameras from working.
+
+### Zoom from a `.deb`
+
+Zoom may use either PipeWire/portal integration or direct V4L2 device access,
+depending on the version and settings. First try the native cameras in Zoom's
+video settings after confirming that the GStreamer tests above work.
+
+If Zoom does not show a usable camera, use a V4L2 loopback device as a virtual
+webcam. This is the most predictable bridge for applications that do not handle
+libcamera/IPU3 cameras directly:
+
+```bash
+sudo apt install v4l2loopback-dkms v4l2loopback-utils
+sudo modprobe v4l2loopback video_nr=42 card_label="Dell 5290 Camera" exclusive_caps=1
+gst-launch-1.0 libcamerasrc camera-name='\\_SB_.PCI0.LNK0' ! queue ! videoconvert ! video/x-raw,format=YUY2 ! v4l2sink device=/dev/video42 sync=false
+```
+
+Keep that `gst-launch-1.0` command running while Zoom is open, then select
+`Dell 5290 Camera` in Zoom.
+
+Use `camera-name='\\_SB_.PCI0.LNK1'` in the pipeline if you want to feed the
+back camera into the virtual webcam instead.
+
+### Telegram Flatpak
+
+Telegram Flatpak may not have direct access to host video devices by default.
+If it cannot see the camera, grant device access:
+
+```bash
+flatpak override --user --device=all org.telegram.desktop
+```
+
+Restart Telegram after changing the override.
+
+If Telegram still does not show a usable camera, use the same V4L2 loopback
+pipeline as for Zoom and select `Dell 5290 Camera` inside Telegram.
 
 ## If You Already Installed A Wrong Same-Name Kernel
 
@@ -183,6 +265,9 @@ Print the install command again without rebuilding:
 ./scripts/build-kernel-5290.sh --no-build --print-install-command
 ```
 
+This also refreshes the local `dell-5290-camera-support` package in
+`out/<abi-release>/`.
+
 Pick a different custom ABI:
 
 ```bash
@@ -217,4 +302,4 @@ official Ubuntu kernel packages already installed on the system.
 
 - Canonical kernel docs: https://canonical-kernel-docs.readthedocs-hosted.com/latest/how-to/develop-customise/build-kernel/
 - Ubuntu wiki note about custom Ubuntu kernel builds: https://wiki.ubuntu.com/Kernel/BuildYourOwnKernel
-- Current repository revision while writing this README: `3beee47`
+- Current repository revision can be checked with `git log --oneline -1`.
