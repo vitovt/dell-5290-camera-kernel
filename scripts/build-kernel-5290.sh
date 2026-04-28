@@ -7,6 +7,7 @@ LOG_DIR="${ROOT_DIR}/logs"
 OUT_DIR="${ROOT_DIR}/out"
 WORKDIR="${ROOT_DIR}/work"
 JOBS="$(nproc)"
+SUPPORT_PACKAGE="dell-5290-camera-support"
 SOURCE_PACKAGE=""
 SOURCE_VERSION=""
 KERNEL_REF=""
@@ -31,6 +32,7 @@ Defaults:
   - Reuse existing work tree and build outputs when present
   - Rewrite Ubuntu ABI to local ABI 999 for non-conflicting package names
   - Copy matching .deb files into out/<abi-release>/
+  - Build a small dell-5290-camera-support .deb with the dma_heap udev rule
 
 Options:
   --workdir <path>          Override the workspace used for downloads/build/output
@@ -74,7 +76,8 @@ Examples:
 
 Install note:
   Do not install every .deb from out/ with 'dpkg -i *'. For boot testing, use
-  the runtime/header packages for the custom ABI from out/<abi-release>/.
+  the runtime/header packages for the custom ABI from out/<abi-release>/ plus
+  dell-5290-camera-support, which grants libcamera access to /dev/dma_heap/system.
 EOF
 }
 
@@ -565,6 +568,58 @@ build_debs() {
 	esac
 }
 
+build_support_deb() {
+	local package_dir deb_path rules_path postinst_path
+
+	[[ -n "${TARGET_SOURCE_VERSION:-}" ]] || return
+	[[ -n "${ARTIFACT_DIR:-}" ]] || return
+
+	package_dir="${WORKDIR}/support-deb/${SUPPORT_PACKAGE}"
+	deb_path="${ARTIFACT_DIR}/${SUPPORT_PACKAGE}_${TARGET_SOURCE_VERSION}_all.deb"
+	rules_path="${package_dir}/usr/lib/udev/rules.d/70-dell-5290-camera-dma-heap.rules"
+	postinst_path="${package_dir}/DEBIAN/postinst"
+
+	rm -rf "${package_dir}"
+	mkdir -p \
+		"${package_dir}/DEBIAN" \
+		"${package_dir}/usr/lib/udev/rules.d" \
+		"${ARTIFACT_DIR}"
+
+	cat > "${package_dir}/DEBIAN/control" <<EOF
+Package: ${SUPPORT_PACKAGE}
+Version: ${TARGET_SOURCE_VERSION}
+Architecture: all
+Maintainer: Local Builder <root@localhost>
+Priority: optional
+Section: misc
+Depends: udev
+Description: Dell Latitude 5290 camera support files
+ Provides udev rules required by the patched Dell Latitude 5290 IPU3 camera stack.
+EOF
+
+	cat > "${rules_path}" <<'EOF'
+# Allow active local desktop users to allocate dma-buf memory for libcamera IPU3.
+SUBSYSTEM=="dma_heap", KERNEL=="system", MODE="0660", GROUP="video", TAG+="uaccess"
+EOF
+
+	cat > "${postinst_path}" <<'EOF'
+#!/bin/sh
+set -e
+
+if command -v udevadm >/dev/null 2>&1; then
+	udevadm control --reload-rules || true
+	udevadm trigger --action=change --subsystem-match=dma_heap --sysname-match=system || true
+	udevadm settle || true
+fi
+
+exit 0
+EOF
+	chmod 755 "${postinst_path}"
+
+	dpkg-deb --build --root-owner-group "${package_dir}" "${deb_path}" >> "${BUILD_LOG}" 2>&1 || die "failed to build ${SUPPORT_PACKAGE}"
+	log "built support package ${deb_path}"
+}
+
 find_installable_debs() {
 	local deb
 	local artifact_root="$1"
@@ -583,7 +638,8 @@ find_installable_debs() {
 		"${artifact_root}"/linux-modules-usbio-"${ABI_RELEASE}"-*.deb \
 		"${artifact_root}"/linux-modules-vision-"${ABI_RELEASE}"-*.deb \
 		"${artifact_root}"/linux-headers-"${ABI_RELEASE}"-*.deb \
-		"${artifact_root}"/"${SOURCE_PACKAGE}"-headers-"${ABI_RELEASE}"_*.deb
+		"${artifact_root}"/"${SOURCE_PACKAGE}"-headers-"${ABI_RELEASE}"_*.deb \
+		"${artifact_root}"/"${SUPPORT_PACKAGE}"_"${TARGET_SOURCE_VERSION}"_all.deb
 	do
 		[[ -f "${deb}" ]] || continue
 		debs_ref+=("${deb}")
@@ -810,6 +866,7 @@ main() {
 	fi
 
 	if [[ "${DO_PRINT_INSTALL_COMMAND}" -eq 1 && "${DO_NO_BUILD}" -eq 1 ]]; then
+		build_support_deb
 		print_install_command
 		post_build_summary
 		exit 0
@@ -833,6 +890,7 @@ main() {
 	cleanup_temporary_dkms_state
 	build_debs
 	collect_artifacts
+	build_support_deb
 	cleanup_work_debs
 	print_install_command
 	install_kernel_if_requested
