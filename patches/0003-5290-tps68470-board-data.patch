@@ -1,6 +1,6 @@
 --- a/drivers/platform/x86/intel/int3472/tps68470_board_data.c
 +++ b/drivers/platform/x86/intel/int3472/tps68470_board_data.c
-@@ -287,6 +287,147 @@
+@@ -287,6 +287,153 @@
  	},
  };
  
@@ -14,6 +14,10 @@
 +
 +static struct regulator_consumer_supply dell_5290_int3477_vio_consumer_supplies[] = {
 +	REGULATOR_SUPPLY("dovdd", "i2c-INT3477:00"),
++};
++
++static struct regulator_consumer_supply dell_5290_int3477_vcm_consumer_supplies[] = {
++	REGULATOR_SUPPLY("vcc", "i2c-INT3477:00-VCM"),
 +};
 +
 +static struct regulator_consumer_supply dell_5290_int3479_vsio_consumer_supplies[] = {
@@ -58,6 +62,8 @@
 +		.apply_uV = 1,
 +		.valid_ops_mask = REGULATOR_CHANGE_STATUS,
 +	},
++	.num_consumer_supplies = ARRAY_SIZE(dell_5290_int3477_vcm_consumer_supplies),
++	.consumer_supplies = dell_5290_int3477_vcm_consumer_supplies,
 +};
 +
 +static const struct regulator_init_data dell_5290_tps68470_vio_reg_init_data = {
@@ -148,7 +154,7 @@
  static const struct dmi_system_id int3472_tps68470_board_data_table[] = {
  	{
  		.matches = {
-@@ -316,6 +457,13 @@
+@@ -316,6 +463,13 @@
  		},
  		.driver_data = (void *)&dell_7212_tps68470_board_data,
  	},
