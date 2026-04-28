@@ -443,6 +443,58 @@ cleanup_temporary_dkms_state() {
 	fi
 }
 
+cleanup_patched_build_outputs() {
+	local build_root build_dir stamp_dir rel output removed=0
+	local -a patched_outputs=(
+		drivers/mfd/intel-lpss-acpi
+		drivers/media/i2c/ov8858
+		drivers/media/pci/intel/ipu-bridge
+		drivers/platform/x86/intel/int3472/intel_skl_int3472_tps68470
+		drivers/platform/x86/intel/int3472/tps68470
+		drivers/platform/x86/intel/int3472/tps68470_board_data
+	)
+
+	if [[ "${BUILD_TARGET}" != "dpkg-buildpackage" ]]; then
+		return
+	fi
+
+	if [[ "${DO_NO_BUILD}" -eq 1 ]]; then
+		return
+	fi
+
+	build_root="${SOURCE_TREE}/debian/build"
+	build_dir="${build_root}/build-generic"
+	stamp_dir="${SOURCE_TREE}/debian/stamps"
+	[[ -d "${build_dir}" ]] || return
+
+	for rel in "${patched_outputs[@]}"; do
+		for output in \
+			"${build_dir}/${rel}.o" \
+			"${build_dir}/${rel}.ko" \
+			"${build_dir}/${rel}.mod" \
+			"${build_dir}/${rel}.mod.o" \
+			"${build_dir}/$(dirname "${rel}")/.$(basename "${rel}").o.cmd" \
+			"${build_dir}/$(dirname "${rel}")/.$(basename "${rel}").ko.cmd" \
+			"${build_dir}/$(dirname "${rel}")/.$(basename "${rel}").mod.cmd" \
+			"${build_dir}/$(dirname "${rel}")/.$(basename "${rel}").mod.o.cmd"
+		do
+			if [[ -e "${output}" ]]; then
+				rm -f "${output}"
+				removed=1
+			fi
+		done
+	done
+
+	if [[ "${removed}" -eq 1 ]]; then
+		log "removed stale patched driver build outputs for incremental rebuild"
+		find "${stamp_dir}" -maxdepth 1 -type f \
+			\( \
+				-name 'stamp-build-generic' -o \
+				-name 'stamp-install-generic' \
+			\) -delete 2>/dev/null || true
+	fi
+}
+
 ensure_expected_kernelrelease_build_state() {
 	local build_root build_dir abi_dir stamp_dir kernel_release_file current_release expected_release
 
@@ -777,6 +829,7 @@ main() {
 	apply_packaging_workarounds
 	refresh_generated_packaging_state
 	ensure_expected_kernelrelease_build_state
+	cleanup_patched_build_outputs
 	cleanup_temporary_dkms_state
 	build_debs
 	collect_artifacts
