@@ -331,8 +331,31 @@ official Ubuntu kernel packages already installed on the system.
 - The build flow is intentionally based on Ubuntu source packages and Ubuntu
   packaging rules instead of a raw upstream kernel build.
 
+### Upstream Status
+
+The original Dell Latitude 5285 work is still moving upstream.  As of
+2026-04-28, the latest public series is v6 and it differs from this tested
+5290 patch set in a few important ways:
+
+- v6 replaces the early GNVS write workaround with static TPS68470 clock
+  consumers in board data.  This is cleaner for upstream, but the local 5290
+  kernel still keeps the GNVS fix because it is the path tested on this
+  hardware.
+- v6 maps OV8858 I/O power through the standard `dovdd` supply and does not
+  add a driver-specific `vsio` supply.  The local 5290 patch still requests
+  `vsio` explicitly because this setup was tested with the Dell 5290 secondary
+  I2C passthrough.
+- The local 5290 board data also adds the DW9714 `vcc` regulator consumer for
+  `i2c-INT3477:00-VCM`; this fixed repeated VCM I2C failures on the 5290 and
+  is not present in the 5285 series.
+
+Do not replace the local patch set with a newer upstream 5285 revision without
+rebuilding and retesting both cameras and the virtual-camera bridge.
+
 ### References
 
 - Canonical kernel docs: https://canonical-kernel-docs.readthedocs-hosted.com/latest/how-to/develop-customise/build-kernel/
 - Ubuntu wiki note about custom Ubuntu kernel builds: https://wiki.ubuntu.com/Kernel/BuildYourOwnKernel
+- LKML thread for the original Dell Latitude 5285 camera work: https://lkml.org/lkml/2026/3/19/2413
+- Current v6 Dell Latitude 5285 camera series: https://www.spinics.net/lists/kernel/msg6170768.html
 - Current repository revision can be checked with `git log --oneline -1`.
