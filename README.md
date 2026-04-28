@@ -198,14 +198,47 @@ libcamera/IPU3 cameras directly:
 ```bash
 sudo apt install v4l2loopback-dkms v4l2loopback-utils
 sudo modprobe v4l2loopback video_nr=42 card_label="Dell 5290 Camera" exclusive_caps=1
-gst-launch-1.0 libcamerasrc camera-name='\\_SB_.PCI0.LNK0' ! queue ! videoconvert ! video/x-raw,format=YUY2 ! v4l2sink device=/dev/video42 sync=false
+./run-cam.sh
 ```
 
-Keep that `gst-launch-1.0` command running while Zoom is open, then select
-`Dell 5290 Camera` in Zoom.
+Keep `run-cam.sh` running while Zoom is open, then select `Dell 5290 Camera`
+in Zoom.
 
-Use `camera-name='\\_SB_.PCI0.LNK1'` in the pipeline if you want to feed the
-back camera into the virtual webcam instead.
+Use the back camera instead:
+
+```bash
+./run-cam.sh back
+```
+
+The one-shot `modprobe` command above does not survive reboot. To create
+`/dev/video42` automatically on every boot:
+
+```bash
+echo v4l2loopback | sudo tee /etc/modules-load.d/dell-5290-camera.conf
+printf 'options v4l2loopback video_nr=42 card_label="Dell 5290 Camera" exclusive_caps=1\n' \
+  | sudo tee /etc/modprobe.d/dell-5290-camera.conf
+```
+
+Reload it immediately without rebooting:
+
+```bash
+sudo modprobe -r v4l2loopback
+sudo modprobe v4l2loopback
+```
+
+Verify:
+
+```bash
+v4l2-ctl --list-devices | grep -A3 "Dell 5290 Camera"
+ls -l /dev/video42
+```
+
+If you do not want to use the helper script, this is the raw front-camera
+pipeline:
+
+```bash
+gst-launch-1.0 libcamerasrc camera-name='\\_SB_.PCI0.LNK0' ! queue ! videoconvert ! video/x-raw,format=YUY2 ! v4l2sink device=/dev/video42 sync=false
+```
 
 ### Telegram Flatpak
 
@@ -219,7 +252,7 @@ flatpak override --user --device=all org.telegram.desktop
 Restart Telegram after changing the override.
 
 If Telegram still does not show a usable camera, use the same V4L2 loopback
-pipeline as for Zoom and select `Dell 5290 Camera` inside Telegram.
+setup as for Zoom and select `Dell 5290 Camera` inside Telegram.
 
 ## If You Already Installed A Wrong Same-Name Kernel
 
