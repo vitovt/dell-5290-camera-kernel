@@ -106,11 +106,12 @@ detect_source_package() {
 resolve_source_version() {
 	local metadata_file stanza
 	metadata_file="${STATE_DIR}/showsrc.txt"
-	apt-cache showsrc "${SOURCE_PACKAGE}" > "${metadata_file}"
 
 	if [[ -n "${SOURCE_VERSION}" ]]; then
 		return
 	fi
+
+	apt-cache showsrc "${SOURCE_PACKAGE}" > "${metadata_file}"
 
 	SOURCE_VERSION="$(awk '/^Version: / { print $2; exit }' "${metadata_file}")"
 	[[ -n "${SOURCE_VERSION}" ]] || die "failed to resolve source version for ${SOURCE_PACKAGE}"
@@ -173,6 +174,15 @@ download_source_archives() {
 	local stanza_file="${STATE_DIR}/showsrc-selected.txt"
 	local directory file base_url dsc_file
 	local -a files=()
+
+	if [[ -d "${SOURCE_TREE}" ]]; then
+		log "source tree already present; skipping source archive lookup/download"
+		return
+	fi
+
+	if [[ ! -s "${metadata_file}" ]]; then
+		apt-cache showsrc "${SOURCE_PACKAGE}" > "${metadata_file}"
+	fi
 
 	extract_selected_stanza "${metadata_file}" "${stanza_file}"
 	directory="$(awk -F': ' '/^Directory: / { print $2; exit }' "${stanza_file}")"
