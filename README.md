@@ -179,6 +179,38 @@ gst-launch-1.0 libcamerasrc camera-name='\\_SB_.PCI0.LNK1' ! queue ! videoconver
 If you want to save a before/after comparison, the build step above already
 captured baseline debug information with `--collect-debug`.
 
+### Diagnose `Device or resource busy`
+
+If `cam -l` or `run-cam.sh` starts failing with `Device or resource busy` after
+the machine has been running for a while, collect diagnostics before rebooting:
+
+```bash
+./scripts/diagnose-camera-busy.sh
+```
+
+The script writes a timestamped directory under `results/camera-busy/`.  Start
+with these files:
+
+- `fuser.stdout`: which process owns `/dev/media*`, `/dev/video*`,
+  `/dev/v4l-subdev*` or `/dev/dma_heap/system`
+- `camera-processes.stdout`: likely camera users such as GStreamer, Chrome,
+  Zoom, Telegram, PipeWire or WirePlumber
+- `cam-list.stderr`: the exact libcamera failure
+- `dmesg.stdout`: recent kernel camera errors if `dmesg` is readable by the
+  current user
+
+After closing the owning application, reset both media graphs:
+
+```bash
+media-ctl -r -d /dev/media0
+media-ctl -r -d /dev/media1
+cam -l
+```
+
+If no process owns the camera nodes but `cam -l` still reports busy, capture
+`sudo dmesg` before rebooting.  That points to a driver or suspend/resume state
+problem rather than a user-space application holding the device.
+
 ## Desktop Applications
 
 Applications that use GStreamer/libcamera directly should work with the system

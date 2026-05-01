@@ -44,10 +44,40 @@ camera_id_for() {
 }
 
 reset_media_graphs() {
+	local rc=0
+
 	for media in /dev/media0 /dev/media1; do
 		[[ -e "${media}" ]] || continue
-		media-ctl -r -d "${media}" || true
+		if ! media-ctl -r -d "${media}"; then
+			rc=1
+		fi
 	done
+
+	return "${rc}"
+}
+
+report_busy_devices() {
+	local devices=()
+	local dev
+
+	for dev in /dev/media* /dev/video* /dev/v4l-subdev* /dev/dma_heap/system; do
+		[[ -e "${dev}" ]] || continue
+		devices+=("${dev}")
+	done
+
+	[[ "${#devices[@]}" -gt 0 ]] || return 0
+
+	printf '\nCamera device users:\n' >&2
+	if command -v fuser >/dev/null 2>&1; then
+		fuser -v "${devices[@]}" >&2 || true
+	else
+		printf '  fuser is not installed; install psmisc to inspect device users.\n' >&2
+	fi
+
+	printf '\nLikely camera processes:\n' >&2
+	ps -eo pid,ppid,stat,comm,args \
+		| grep -Ei 'gst-launch|libcamera|pipewire|wireplumber|xdg-desktop-portal|chrome|chromium|vivaldi|firefox|zoom|telegram|cheese' \
+		| grep -v grep >&2 || true
 }
 
 run_worker() {
@@ -72,13 +102,18 @@ EOF
 			kill -TERM "${gst_pid}" 2>/dev/null || true
 			wait "${gst_pid}" 2>/dev/null || true
 		fi
-		reset_media_graphs
+		reset_media_graphs || true
 		exit "${rc}"
 	}
 
 	trap cleanup EXIT HUP INT TERM
 
-	reset_media_graphs
+	if ! reset_media_graphs; then
+		printf 'Failed to reset one or more media graphs. A process may still be using the camera.\n' >&2
+		report_busy_devices
+		exit 1
+	fi
+
 	printf 'Forwarding %s to %s. Close this window or press Ctrl+C to stop.\n' "${camera_id}" "${LOOPBACK_DEVICE}"
 
 	gst-launch-1.0 libcamerasrc "camera-name=${camera_name}" \
