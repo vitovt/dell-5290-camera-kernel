@@ -19,6 +19,18 @@ run_shell() {
 	printf '%s %s\n' "${name}" "${rc}" >> "${OUT_DIR}/exit-codes.txt"
 }
 
+run_bounded_shell() {
+	local name="$1"
+	local cmd="$2"
+	local stdout_file="${OUT_DIR}/${name}.stdout"
+	local stderr_file="${OUT_DIR}/${name}.stderr"
+	local rc=0
+
+	printf '==> %s\n' "${cmd}" | tee -a "${OUT_DIR}/commands.log" >/dev/null
+	bash -lc "${cmd}" >"${stdout_file}" 2>"${stderr_file}" || rc=$?
+	printf '%s %s\n' "${name}" "${rc}" >> "${OUT_DIR}/exit-codes.txt"
+}
+
 run_shell date "date --iso-8601=seconds"
 run_shell uptime "uptime"
 run_shell uname "uname -a"
@@ -28,7 +40,7 @@ run_shell groups "id && groups"
 run_shell fuser "fuser -v /dev/media* /dev/video* /dev/v4l-subdev* /dev/dma_heap/system 2>/dev/null || true"
 run_shell lsof "command -v lsof >/dev/null && lsof /dev/media* /dev/video* /dev/v4l-subdev* /dev/dma_heap/system 2>/dev/null || true"
 run_shell camera-processes "ps -eo pid,ppid,stat,comm,args | grep -Ei 'gst-launch|libcamera|pipewire|wireplumber|xdg-desktop-portal|chrome|chromium|vivaldi|firefox|zoom|telegram|cheese' | grep -v grep || true"
-run_shell cam-list "cam -l || true"
+run_bounded_shell cam-list "timeout --signal=TERM --kill-after=2s 8s cam -l 2>&1 | head -n 240"
 run_shell media0 "media-ctl -p -d /dev/media0 || true"
 run_shell media1 "media-ctl -p -d /dev/media1 || true"
 run_shell v4l2-devices "v4l2-ctl --list-devices || true"

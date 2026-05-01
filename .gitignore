@@ -3,3 +3,4 @@ out/
 results/
 work/
 *.log
+dmesg*.txt
