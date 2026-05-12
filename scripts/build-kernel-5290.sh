@@ -332,24 +332,48 @@ prepare_config() {
 	fi
 }
 
-apply_patches() {
-	local stamp_file="${STATE_DIR}/patches.applied"
+patch_fingerprint() {
 	local patch_file
 
-	if [[ -f "${stamp_file}" ]]; then
+	for patch_file in "${PATCH_DIR}"/[0-9][0-9][0-9][0-9]-*.patch; do
+		[[ -e "${patch_file}" ]] || continue
+		sha256sum "${patch_file}"
+	done
+}
+
+apply_patches() {
+	local stamp_file="${STATE_DIR}/patches.applied"
+	local patch_file current_fingerprint applied=0
+
+	current_fingerprint="$(patch_fingerprint)"
+	if [[ -f "${stamp_file}" ]] && cmp -s <(printf '%s\n' "${current_fingerprint}") "${stamp_file}"; then
 		log "patches already applied"
 		return
 	fi
 
 	for patch_file in "${PATCH_DIR}"/[0-9][0-9][0-9][0-9]-*.patch; do
+		[[ -e "${patch_file}" ]] || continue
+
+		if (
+			cd "${SOURCE_TREE}"
+			patch -p1 --reverse --dry-run < "${patch_file}"
+		) >> "${BUILD_LOG}" 2>&1; then
+			log "$(basename "${patch_file}") already applied"
+			continue
+		fi
+
 		log "applying $(basename "${patch_file}")"
 		(
 			cd "${SOURCE_TREE}"
 			patch -p1 --forward < "${patch_file}"
 		) >> "${BUILD_LOG}" 2>&1 || die "failed to apply $(basename "${patch_file}")"
+		applied=1
 	done
 
-	date +%s > "${stamp_file}"
+	printf '%s\n' "${current_fingerprint}" > "${stamp_file}"
+	if [[ "${applied}" -eq 0 ]]; then
+		log "patch fingerprint refreshed"
+	fi
 }
 
 run_menuconfig_if_requested() {
@@ -449,6 +473,7 @@ cleanup_temporary_dkms_state() {
 cleanup_patched_build_outputs() {
 	local build_root build_dir stamp_dir rel output removed=0
 	local -a patched_outputs=(
+		drivers/media/i2c/dw9714
 		drivers/mfd/intel-lpss-acpi
 		drivers/media/i2c/ov8858
 		drivers/media/pci/intel/ipu-bridge
