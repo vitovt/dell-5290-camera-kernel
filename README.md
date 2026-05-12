@@ -211,6 +211,40 @@ If no process owns the camera nodes but `cam -l` still reports busy, capture
 `sudo dmesg` before rebooting.  That points to a driver or suspend/resume state
 problem rather than a user-space application holding the device.
 
+### Suspend/Resume Notes
+
+On the Dell 5290, camera failures after `s2idle`/hibernate and failed sleep
+attempts are usually kernel-side power-management failures, not normal
+libcamera user-space locks.  The relevant signatures are:
+
+```text
+dw9714 i2c-INT3477:00-VCM: I2C write fail
+dw9714 i2c-INT3477:00-VCM: dw9714_vcm_suspend I2C failure: -5
+dw9714 i2c-INT3477:00-VCM: dw9714_vcm_resume I2C failure: -5
+ov5670 i2c-INT3479:00: ov5670_start_streaming failed to set powerup registers
+ov8858 i2c-INT3477:00: Failed to write reg ...: -121
+```
+
+The patch set includes two pieces that matter for this:
+
+- `0003-5290-tps68470-board-data.patch` maps the DW9714 `vcc` supply to
+  `i2c-INT3477:00-VCM`.  If `dmesg` still says `supply vcc not found, using
+  dummy regulator`, the booted kernel is missing the tested 5290 board data or
+  was built from a reduced patch set.
+- `0006-dw9714-best-effort-system-sleep.patch` keeps DW9714 runtime PM strict,
+  but makes system suspend/resume best-effort so a lens I2C failure does not
+  abort machine sleep.
+
+Check the currently booted kernel:
+
+```bash
+./scripts/check-camera-kernel-state.sh
+```
+
+If the checker does not find the DW9714 system-sleep strings or the
+`i2c-INT3477:00-VCM` board-data string in the installed modules, rebuild and
+install the kernel again from this full patch set.
+
 ## Desktop Applications
 
 Applications that use GStreamer/libcamera directly should work with the system

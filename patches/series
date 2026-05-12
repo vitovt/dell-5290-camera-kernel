@@ -3,3 +3,4 @@
 0003-5290-tps68470-board-data.patch
 0004-ipu-bridge-int3477-ov8858.patch
 0005-ov8858-int3477-vsio.patch
+0006-dw9714-best-effort-system-sleep.patch
