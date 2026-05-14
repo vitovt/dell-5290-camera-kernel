@@ -4,3 +4,4 @@
 0004-ipu-bridge-int3477-ov8858.patch
 0005-ov8858-int3477-vsio.patch
 0006-dw9714-best-effort-system-sleep.patch
+0007-ov-sensors-force-runtime-pm-system-sleep.patch

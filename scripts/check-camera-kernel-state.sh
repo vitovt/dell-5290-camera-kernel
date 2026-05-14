@@ -35,6 +35,12 @@ printf '\nDW9714 module strings:\n'
 module_strings dw9714 \
 	| grep -E 'dw9714_vcm_system|Ignoring power .* system|dw9714_vcm_suspend|dw9714_vcm_resume' || true
 
+printf '\nOV sensor system sleep strings:\n'
+module_strings ov5670 \
+	| grep -E 'ov5670_system_|force runtime .* system sleep' || true
+module_strings ov8858 \
+	| grep -E 'ov8858_system_|force runtime .* system sleep' || true
+
 printf '\nTPS68470 board-data strings:\n'
 module_strings intel_skl_int3472_tps68470 \
 	| grep -E 'i2c-INT3477:00-VCM|dell_5290_int3477_vcm|Latitude 5290' || true

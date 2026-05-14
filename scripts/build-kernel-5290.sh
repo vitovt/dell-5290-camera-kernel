@@ -475,6 +475,7 @@ cleanup_patched_build_outputs() {
 	local -a patched_outputs=(
 		drivers/media/i2c/dw9714
 		drivers/mfd/intel-lpss-acpi
+		drivers/media/i2c/ov5670
 		drivers/media/i2c/ov8858
 		drivers/media/pci/intel/ipu-bridge
 		drivers/platform/x86/intel/int3472/intel_skl_int3472_tps68470
