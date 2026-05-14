@@ -9,3 +9,4 @@
 0900-ov5670-retry-stream-after-power-cycle.patch
 0901-ov5670-extend-power-up-settle-delay.patch
 0902-5290-tps68470-reapply-gnvs-after-system-resume.patch
+0903-5290-tps68470-restore-i2c-bridge-after-hibernate.patch
