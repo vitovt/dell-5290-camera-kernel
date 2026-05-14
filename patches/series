@@ -7,3 +7,4 @@
 0007-ov-sensors-force-runtime-pm-system-sleep.patch
 0008-ov5670-retry-stream-after-power-cycle.patch
 0009-ov5670-extend-power-up-settle-delay.patch
+0010-5290-tps68470-static-clock-consumers.patch
