@@ -37,7 +37,7 @@ module_strings dw9714 \
 
 printf '\nOV sensor system sleep strings:\n'
 module_strings ov5670 \
-	| grep -E 'ov5670_system_|force runtime .* system sleep' || true
+	| grep -E 'ov5670_system_|force runtime .* system sleep|sensor power cycle|Stream retry' || true
 module_strings ov8858 \
 	| grep -E 'ov8858_system_|force runtime .* system sleep' || true
 

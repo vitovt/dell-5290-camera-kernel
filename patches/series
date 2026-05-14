@@ -5,3 +5,4 @@
 0005-ov8858-int3477-vsio.patch
 0006-dw9714-best-effort-system-sleep.patch
 0007-ov-sensors-force-runtime-pm-system-sleep.patch
+0008-ov5670-retry-stream-after-power-cycle.patch
