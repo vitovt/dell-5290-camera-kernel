@@ -427,7 +427,11 @@ run_menuconfig_if_requested() {
 }
 
 apply_packaging_workarounds() {
-	local amd64_rules module_signature_check
+	local amd64_rules helper helper_path
+	local -a executable_helpers=(
+		debian/scripts/checks/module-signature-check
+		debian/scripts/file-downloader
+	)
 
 	detect_packaging_dir
 	amd64_rules="${DEBIAN_DIR}/rules.d/amd64.mk"
@@ -436,11 +440,13 @@ apply_packaging_workarounds() {
 		sed -i 's/^do_tools_perf_jvmti = true$/do_tools_perf_jvmti = false/' "${amd64_rules}"
 	fi
 
-	module_signature_check="${SOURCE_TREE}/debian/scripts/checks/module-signature-check"
-	if [[ -f "${module_signature_check}" && ! -x "${module_signature_check}" ]]; then
-		log "making Ubuntu module-signature-check executable"
-		chmod +x "${module_signature_check}"
-	fi
+	for helper in "${executable_helpers[@]}"; do
+		helper_path="${SOURCE_TREE}/${helper}"
+		if [[ -f "${helper_path}" && ! -x "${helper_path}" ]]; then
+			log "making Ubuntu helper executable: ${helper}"
+			chmod +x "${helper_path}"
+		fi
+	done
 }
 
 refresh_generated_packaging_state() {
