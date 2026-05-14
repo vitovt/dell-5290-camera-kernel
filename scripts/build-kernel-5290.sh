@@ -343,7 +343,7 @@ patch_fingerprint() {
 
 apply_patches() {
 	local stamp_file="${STATE_DIR}/patches.applied"
-	local patch_file current_fingerprint applied=0
+	local patch_file current_fingerprint patch_log applied=0
 
 	current_fingerprint="$(patch_fingerprint)"
 	if [[ -f "${stamp_file}" ]] && cmp -s <(printf '%s\n' "${current_fingerprint}") "${stamp_file}"; then
@@ -361,6 +361,30 @@ apply_patches() {
 			log "$(basename "${patch_file}") already applied"
 			continue
 		fi
+
+		patch_log="$(mktemp "${LOG_DIR}/patch-$(basename "${patch_file}").XXXXXX")"
+		if (
+			cd "${SOURCE_TREE}"
+			patch -p1 --forward --dry-run < "${patch_file}"
+		) > "${patch_log}" 2>&1; then
+			log "applying $(basename "${patch_file}")"
+			cat "${patch_log}" >> "${BUILD_LOG}"
+			(
+				cd "${SOURCE_TREE}"
+				patch -p1 --forward < "${patch_file}"
+			) >> "${BUILD_LOG}" 2>&1 || die "failed to apply $(basename "${patch_file}")"
+			applied=1
+			rm -f "${patch_log}"
+			continue
+		fi
+
+		cat "${patch_log}" >> "${BUILD_LOG}"
+		if grep -q "Reversed (or previously applied) patch detected" "${patch_log}"; then
+			log "$(basename "${patch_file}") already applied"
+			rm -f "${patch_log}"
+			continue
+		fi
+		rm -f "${patch_log}"
 
 		log "applying $(basename "${patch_file}")"
 		(
