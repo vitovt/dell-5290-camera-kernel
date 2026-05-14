@@ -445,7 +445,7 @@ refresh_generated_packaging_state() {
 	fi
 
 	generated_debian_dir="${SOURCE_TREE}/debian"
-	[[ -d "${generated_debian_dir}" ]] || return
+	[[ -d "${generated_debian_dir}" ]] || return 0
 
 	log "refreshing generated debian/ packaging state while keeping compiled objects"
 	rm -f \
@@ -482,7 +482,7 @@ cleanup_temporary_dkms_state() {
 	fi
 
 	build_root="${SOURCE_TREE}/debian/build"
-	[[ -d "${build_root}" ]] || return
+	[[ -d "${build_root}" ]] || return 0
 
 	while IFS= read -r -d '' dkms_dir; do
 		rm -rf "${dkms_dir}"
@@ -518,7 +518,7 @@ cleanup_patched_build_outputs() {
 	build_root="${SOURCE_TREE}/debian/build"
 	build_dir="${build_root}/build-generic"
 	stamp_dir="${SOURCE_TREE}/debian/stamps"
-	[[ -d "${build_dir}" ]] || return
+	[[ -d "${build_dir}" ]] || return 0
 
 	for rel in "${patched_outputs[@]}"; do
 		for output in \
