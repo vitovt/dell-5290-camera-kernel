@@ -299,6 +299,37 @@ v4l2-ctl --list-devices | grep -A3 "Dell 5290 Camera"
 ls -l /dev/video42
 ```
 
+### Loopback-Only Mode
+
+For the most stable desktop setup, expose only the V4L2 loopback camera to
+applications and keep browsers, portals and PipeWire away from the physical
+IPU3/libcamera devices. In this mode `run-cam.sh` is the only process that
+opens the physical camera, and applications select `Dell 5290 Camera`
+(`/dev/video42`).
+
+Install the user-level WirePlumber override:
+
+```bash
+./scripts/configure-loopback-only-camera.sh install
+```
+
+Check whether anything still holds the physical devices:
+
+```bash
+./scripts/configure-loopback-only-camera.sh status
+```
+
+Remove the override:
+
+```bash
+./scripts/configure-loopback-only-camera.sh remove
+```
+
+The helper disables WirePlumber's libcamera monitor and disables V4L2 nodes
+`/dev/video0` through `/dev/video31` inside WirePlumber. It intentionally keeps
+`/dev/video42` visible, so Zoom, Telegram and browsers can use the loopback
+camera.
+
 If you do not want to use the helper script, this is the raw front-camera
 pipeline:
 
