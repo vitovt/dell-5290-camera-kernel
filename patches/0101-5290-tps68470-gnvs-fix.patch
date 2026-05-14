@@ -183,6 +183,6 @@
  
 +	dell5290_gnvs_fix();
 +
- 	n_consumers = skl_int3472_fill_clk_pdata(&client->dev, &clk_pdata);
- 	if (n_consumers < 0)
- 		return n_consumers;
+ 	board_data = int3472_tps68470_get_board_data(dev_name(&client->dev));
+ 	if (board_data && board_data->n_clk_consumers) {
+ 		clk_pdata = devm_kzalloc(&client->dev,
