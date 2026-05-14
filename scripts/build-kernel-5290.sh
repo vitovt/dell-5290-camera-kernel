@@ -427,13 +427,19 @@ run_menuconfig_if_requested() {
 }
 
 apply_packaging_workarounds() {
-	local amd64_rules
+	local amd64_rules module_signature_check
 
 	detect_packaging_dir
 	amd64_rules="${DEBIAN_DIR}/rules.d/amd64.mk"
 	if [[ -f "${amd64_rules}" ]] && grep -q '^do_tools_perf_jvmti = true$' "${amd64_rules}"; then
 		log "disabling do_tools_perf_jvmti in Ubuntu HWE amd64 packaging to avoid missing libperf-jvmti.so"
 		sed -i 's/^do_tools_perf_jvmti = true$/do_tools_perf_jvmti = false/' "${amd64_rules}"
+	fi
+
+	module_signature_check="${SOURCE_TREE}/debian/scripts/checks/module-signature-check"
+	if [[ -f "${module_signature_check}" && ! -x "${module_signature_check}" ]]; then
+		log "making Ubuntu module-signature-check executable"
+		chmod +x "${module_signature_check}"
 	fi
 }
 
