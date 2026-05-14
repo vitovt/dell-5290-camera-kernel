@@ -427,11 +427,7 @@ run_menuconfig_if_requested() {
 }
 
 apply_packaging_workarounds() {
-	local amd64_rules helper helper_path
-	local -a executable_helpers=(
-		debian/scripts/checks/module-signature-check
-		debian/scripts/file-downloader
-	)
+	local amd64_rules helper_path first_line fixed_helpers=0
 
 	detect_packaging_dir
 	amd64_rules="${DEBIAN_DIR}/rules.d/amd64.mk"
@@ -440,13 +436,18 @@ apply_packaging_workarounds() {
 		sed -i 's/^do_tools_perf_jvmti = true$/do_tools_perf_jvmti = false/' "${amd64_rules}"
 	fi
 
-	for helper in "${executable_helpers[@]}"; do
-		helper_path="${SOURCE_TREE}/${helper}"
-		if [[ -f "${helper_path}" && ! -x "${helper_path}" ]]; then
-			log "making Ubuntu helper executable: ${helper}"
-			chmod +x "${helper_path}"
-		fi
-	done
+	while IFS= read -r -d '' helper_path; do
+		[[ ! -x "${helper_path}" ]] || continue
+		IFS= read -r first_line < "${helper_path}" || continue
+		[[ "${first_line}" == '#!'* ]] || continue
+
+		chmod +x "${helper_path}"
+		fixed_helpers=$((fixed_helpers + 1))
+	done < <(find "${SOURCE_TREE}/debian/scripts" -type f -print0 2>/dev/null)
+
+	if [[ "${fixed_helpers}" -gt 0 ]]; then
+		log "made ${fixed_helpers} Ubuntu packaging helper script(s) executable"
+	fi
 }
 
 refresh_generated_packaging_state() {
