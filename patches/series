@@ -10,3 +10,4 @@
 0901-ov5670-extend-power-up-settle-delay.patch
 0902-5290-tps68470-reapply-gnvs-after-system-resume.patch
 0903-5290-tps68470-restore-i2c-bridge-after-hibernate.patch
+0904-5290-tps68470-replay-child-state-after-hibernate.patch
