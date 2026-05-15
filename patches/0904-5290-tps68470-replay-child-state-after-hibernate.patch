@@ -1,6 +1,6 @@
 --- a/drivers/platform/x86/intel/int3472/tps68470.c
 +++ b/drivers/platform/x86/intel/int3472/tps68470.c
-@@ -424,6 +424,136 @@
+@@ -424,6 +424,77 @@
  }
  
  #define DELL5290_VSIO_SEL_1800600UV	52
@@ -12,65 +12,6 @@
 +#define DELL5290_PLLCTL_IDLE		\
 +	((TPS68470_OSC_EXT_CAP_DEFAULT << TPS68470_OSC_EXT_CAP_SHIFT) | \
 +	 (TPS68470_CLK_SRC_XTAL << TPS68470_CLK_SRC_SHIFT))
-+
-+static int dell5290_tps68470_read_or_neg(struct regmap *regmap,
-+					 unsigned int reg)
-+{
-+	unsigned int val;
-+	int ret;
-+
-+	ret = regmap_read(regmap, reg, &val);
-+	if (ret)
-+		return ret;
-+
-+	return val;
-+}
-+
-+static void dell5290_tps68470_dump_state(struct device *dev,
-+					 struct regmap *regmap,
-+					 const char *tag)
-+{
-+	int si2c, gpdo, sgpo;
-+	int gp3a, gp4a;
-+	int clk1, clk2, pllctl;
-+	int vdval, vaval, vcmval, vioval, vsioval, vaux1val, vaux2val;
-+	int vdctl, vactl, vcmctl, vaux1ctl, vaux2ctl;
-+
-+	si2c = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_S_I2C_CTL);
-+	gpdo = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_GPDO);
-+	sgpo = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_SGPO);
-+	gp3a = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_GPCTL3A);
-+	gp4a = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_GPCTL4A);
-+	clk1 = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_CLKCFG1);
-+	clk2 = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_CLKCFG2);
-+	pllctl = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_PLLCTL);
-+	vdval = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VDVAL);
-+	vaval = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VAVAL);
-+	vcmval = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VCMVAL);
-+	vioval = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VIOVAL);
-+	vsioval = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VSIOVAL);
-+	vaux1val = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VAUX1VAL);
-+	vaux2val = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VAUX2VAL);
-+	vdctl = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VDCTL);
-+	vactl = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VACTL);
-+	vcmctl = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VCMCTL);
-+	vaux1ctl = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VAUX1CTL);
-+	vaux2ctl = dell5290_tps68470_read_or_neg(regmap, TPS68470_REG_VAUX2CTL);
-+
-+	dev_info(dev,
-+		 "Dell 5290 TPS68470 %s: si2c=%#04x gpdo=%#04x sgpo=%#04x gp3a=%#04x gp4a=%#04x\n",
-+		 tag, si2c, gpdo, sgpo, gp3a, gp4a);
-+	dev_info(dev,
-+		 "Dell 5290 TPS68470 %s: clk1=%#04x clk2=%#04x pllctl=%#04x\n",
-+		 tag, clk1, clk2, pllctl);
-+	dev_info(dev,
-+		 "Dell 5290 TPS68470 %s: vd=%#04x va=%#04x vcm=%#04x vio=%#04x vsio=%#04x aux1=%#04x aux2=%#04x\n",
-+		 tag, vdval, vaval, vcmval, vioval, vsioval, vaux1val,
-+		 vaux2val);
-+	dev_info(dev,
-+		 "Dell 5290 TPS68470 %s: vdctl=%#04x vactl=%#04x vcmctl=%#04x aux1ctl=%#04x aux2ctl=%#04x\n",
-+		 tag, vdctl, vactl, vcmctl, vaux1ctl, vaux2ctl);
-+}
 +
 +static int dell5290_tps68470_replay_child_state(struct device *dev,
 +						struct regmap *regmap)
@@ -137,7 +78,7 @@
  
  static int dell5290_tps68470_restore_i2c_bridge(struct device *dev,
  						struct regmap *regmap)
-@@ -439,7 +569,17 @@
+@@ -439,7 +510,15 @@
  	 * behind the TPS68470 secondary I2C path.  After S4 the PMIC is still
  	 * reachable, but the downstream devices can return -EIO unless the
  	 * VSIO/S_I2C state is replayed.
@@ -146,8 +87,6 @@
 +	 * child-state.  S4 appears to preserve PMIC I2C reachability while
 +	 * losing enough child configuration for downstream sensor I2C to fail.
  	 */
-+	dell5290_tps68470_dump_state(dev, regmap, "pre-replay");
-+
 +	ret = dell5290_tps68470_replay_child_state(dev, regmap);
 +	if (ret)
 +		return ret;
@@ -155,12 +94,3 @@
  	ret = regmap_write(regmap, TPS68470_REG_VSIOVAL,
  			   DELL5290_VSIO_SEL_1800600UV);
  	if (ret)
-@@ -461,6 +601,8 @@
- 	dev_info(dev, "Dell 5290 2-in-1 restored TPS68470 S_I2C_CTL=0x%02x after hibernate\n",
- 		 val);
- 
-+	dell5290_tps68470_dump_state(dev, regmap, "post-replay");
-+
- 	return 0;
- }
- 
