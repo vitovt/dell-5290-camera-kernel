@@ -372,14 +372,6 @@ apply_patches() {
 			die "${patch_name} changed since it was applied; rerun with --clean to rebuild the patch stack"
 		fi
 
-		if (
-			cd "${SOURCE_TREE}"
-			patch -p1 --reverse --dry-run < "${patch_file}"
-		) >> "${BUILD_LOG}" 2>&1; then
-			log "${patch_name} already applied"
-			continue
-		fi
-
 		patch_log="$(mktemp "${LOG_DIR}/patch-${patch_name}.XXXXXX")"
 		if (
 			cd "${SOURCE_TREE}"
@@ -396,20 +388,18 @@ apply_patches() {
 			continue
 		fi
 
-		cat "${patch_log}" >> "${BUILD_LOG}"
-		if grep -q "Reversed (or previously applied) patch detected" "${patch_log}"; then
+		if (
+			cd "${SOURCE_TREE}"
+			patch -p1 --reverse --dry-run < "${patch_file}"
+		) >> "${BUILD_LOG}" 2>&1; then
 			log "${patch_name} already applied"
 			rm -f "${patch_log}"
 			continue
 		fi
-		rm -f "${patch_log}"
 
-		log "applying ${patch_name}"
-		(
-			cd "${SOURCE_TREE}"
-			patch -p1 --forward < "${patch_file}"
-		) >> "${BUILD_LOG}" 2>&1 || die "failed to apply ${patch_name}"
-		applied=1
+		cat "${patch_log}" >> "${BUILD_LOG}"
+		rm -f "${patch_log}"
+		die "failed to apply ${patch_name}"
 	done
 
 	printf '%s\n' "${current_fingerprint}" > "${stamp_file}"
