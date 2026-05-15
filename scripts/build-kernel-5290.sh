@@ -344,6 +344,7 @@ patch_fingerprint() {
 apply_patches() {
 	local stamp_file="${STATE_DIR}/patches.applied"
 	local patch_file current_fingerprint patch_log applied=0
+	local patch_checksum patch_name
 
 	current_fingerprint="$(patch_fingerprint)"
 	if [[ -f "${stamp_file}" ]] && cmp -s <(printf '%s\n' "${current_fingerprint}") "${stamp_file}"; then
@@ -354,25 +355,42 @@ apply_patches() {
 	for patch_file in "${PATCH_DIR}"/[0-9][0-9][0-9][0-9]-*.patch; do
 		[[ -e "${patch_file}" ]] || continue
 
+		patch_checksum="$(sha256sum "${patch_file}")"
+		patch_name="$(basename "${patch_file}")"
+
+		# In reuse-build mode the source tree may contain later patches
+		# that touch the same hunks.  Reverse dry-run is then not a stable
+		# way to detect whether an earlier patch is already applied.  Trust
+		# the recorded checksum for patches applied by previous script runs,
+		# and only run patch(1) for new patches.
+		if [[ -f "${stamp_file}" ]] && grep -Fxq "${patch_checksum}" "${stamp_file}"; then
+			log "${patch_name} already recorded as applied"
+			continue
+		fi
+
+		if [[ -f "${stamp_file}" ]] && grep -Fq "/${patch_name}" "${stamp_file}"; then
+			die "${patch_name} changed since it was applied; rerun with --clean to rebuild the patch stack"
+		fi
+
 		if (
 			cd "${SOURCE_TREE}"
 			patch -p1 --reverse --dry-run < "${patch_file}"
 		) >> "${BUILD_LOG}" 2>&1; then
-			log "$(basename "${patch_file}") already applied"
+			log "${patch_name} already applied"
 			continue
 		fi
 
-		patch_log="$(mktemp "${LOG_DIR}/patch-$(basename "${patch_file}").XXXXXX")"
+		patch_log="$(mktemp "${LOG_DIR}/patch-${patch_name}.XXXXXX")"
 		if (
 			cd "${SOURCE_TREE}"
 			patch -p1 --forward --dry-run < "${patch_file}"
 		) > "${patch_log}" 2>&1; then
-			log "applying $(basename "${patch_file}")"
+			log "applying ${patch_name}"
 			cat "${patch_log}" >> "${BUILD_LOG}"
 			(
 				cd "${SOURCE_TREE}"
 				patch -p1 --forward < "${patch_file}"
-			) >> "${BUILD_LOG}" 2>&1 || die "failed to apply $(basename "${patch_file}")"
+			) >> "${BUILD_LOG}" 2>&1 || die "failed to apply ${patch_name}"
 			applied=1
 			rm -f "${patch_log}"
 			continue
@@ -380,17 +398,17 @@ apply_patches() {
 
 		cat "${patch_log}" >> "${BUILD_LOG}"
 		if grep -q "Reversed (or previously applied) patch detected" "${patch_log}"; then
-			log "$(basename "${patch_file}") already applied"
+			log "${patch_name} already applied"
 			rm -f "${patch_log}"
 			continue
 		fi
 		rm -f "${patch_log}"
 
-		log "applying $(basename "${patch_file}")"
+		log "applying ${patch_name}"
 		(
 			cd "${SOURCE_TREE}"
 			patch -p1 --forward < "${patch_file}"
-		) >> "${BUILD_LOG}" 2>&1 || die "failed to apply $(basename "${patch_file}")"
+		) >> "${BUILD_LOG}" 2>&1 || die "failed to apply ${patch_name}"
 		applied=1
 	done
 
