@@ -6,18 +6,17 @@ cloning the full upstream kernel tree.
 
 ## Chosen workflow
 
-The current host runs Ubuntu/KDE neon kernel `6.17.0-19-generic`, which maps to
-the Ubuntu HWE source package family `linux-hwe-6.17`. The automation here is
-built around:
+The tested target runs Ubuntu/KDE neon with the Ubuntu HWE source package
+family `linux-hwe-6.17`. The automation here is built around:
 
 1. Downloading the matching Ubuntu source package metadata and tarballs.
 2. Extracting the source locally.
-3. Applying only the local `patches/0001` .. `0005` patch set.
+3. Applying the ordered patch queue from `patches/series`.
 4. Optionally running Ubuntu's interactive config editor.
 5. Building Ubuntu-native `.deb` packages.
 
 This keeps the packaging close to the target distro and avoids downloading the
-entire upstream git history just to carry a 5-patch local delta.
+entire upstream git history just to carry a local hardware delta.
 
 For the currently tested `linux-hwe-6.17` amd64 packaging on this host, the
 automation also applies a local packaging workaround that flips
@@ -25,14 +24,16 @@ automation also applies a local packaging workaround that flips
 actually emit `libperf-jvmti.so`. This workaround is outside the camera patch
 set and only affects packaging of the perf JVMTI helper.
 
-## Important caveat
+## Tested hardware status
 
-This workspace was prepared on a non-target machine. The live host here reports
-`HP 250 G7 Notebook PC`, not `Dell Latitude 5290 2-in-1`. That means:
+The patch set has been tested on a Dell Latitude 5290 2-in-1 with both cameras.
+The current working target is:
 
-- Source download, patch preparation, script validation, and package build can
-  be done here.
-- Real camera bring-up validation must be run on the actual Dell hardware.
+- normal boot: cameras enumerate and stream
+- suspend/resume: cameras continue to work
+- hibernate/restore: cameras continue to work after TPS68470 child-state replay
+- desktop applications: V4L2 loopback workflow works for Zoom, Telegram and
+  browsers
 
 ## Layout
 
@@ -41,6 +42,8 @@ This workspace was prepared on a non-target machine. The live host here reports
 - `scripts/collect-debug-info.sh`: baseline and post-patch diagnostics capture
 - `scripts/validate-cameras.sh`: focused camera validation commands
 - `scripts/unpack-dell-camera-drivers.sh`: helper for Dell Windows packages
+- `PATCH_APPLY_POLICY.md`: policy for maintaining the patch queue
+- `HIBERNATION_ISSUE.md`: short investigation log for the S4 camera failure
 - `out/`: built `.deb` artifacts
 - `logs/`: build and diagnostic logs
 - `results/`: captured runtime diagnostics

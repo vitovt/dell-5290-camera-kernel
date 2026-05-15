@@ -10,7 +10,7 @@ sequencing and IPU bridge are detected correctly.
 
 This repository contains:
 
-- a small patch set adapted for the Dell Latitude 5290 2-in-1
+- a patch set adapted for the Dell Latitude 5290 2-in-1
 - a build script that uses Ubuntu kernel source packages instead of a full
   upstream kernel git checkout
 - a small `dell-5290-camera-support` package that installs the udev rule needed
@@ -160,6 +160,14 @@ Run:
 The validator resets the media graphs, checks both explicit cameras and writes
 logs under `results/post-patch/<timestamp>/`.
 
+The tested patch set supports normal boot, suspend/resume and hibernate/restore
+on the Dell Latitude 5290 2-in-1.  After hibernate the kernel should log a
+single TPS68470 restore line similar to:
+
+```text
+Dell 5290 2-in-1 restored TPS68470 S_I2C_CTL=0x03 after hibernate
+```
+
 For a quick visible smoke test:
 
 ```bash
@@ -215,7 +223,10 @@ problem rather than a user-space application holding the device.
 
 On the Dell 5290, camera failures after `s2idle`/hibernate and failed sleep
 attempts are usually kernel-side power-management failures, not normal
-libcamera user-space locks.  The relevant signatures are:
+libcamera user-space locks.  The tested patch set includes Dell-specific
+system-sleep handling for the DW9714 VCM, OV sensors and TPS68470 PMIC.
+
+The relevant failure signatures are:
 
 ```text
 dw9714 i2c-INT3477:00-VCM: I2C write fail
@@ -225,15 +236,24 @@ ov5670 i2c-INT3479:00: ov5670_start_streaming failed to set powerup registers
 ov8858 i2c-INT3477:00: Failed to write reg ...: -121
 ```
 
-The patch set includes two pieces that matter for this:
+The patch set includes these pieces that matter for this:
 
-- `0003-5290-tps68470-board-data.patch` maps the DW9714 `vcc` supply to
+- `0102-5290-tps68470-board-data.patch` maps the DW9714 `vcc` supply to
   `i2c-INT3477:00-VCM`.  If `dmesg` still says `supply vcc not found, using
   dummy regulator`, the booted kernel is missing the tested 5290 board data or
   was built from a reduced patch set.
-- `0006-dw9714-best-effort-system-sleep.patch` keeps DW9714 runtime PM strict,
+- `0200-dw9714-best-effort-system-sleep.patch` keeps DW9714 runtime PM strict,
   but makes system suspend/resume best-effort so a lens I2C failure does not
   abort machine sleep.
+- `0201-ov-sensors-force-runtime-pm-system-sleep.patch` forces the OV sensors
+  through runtime suspend before system sleep.
+- `0902-5290-tps68470-reapply-gnvs-after-system-resume.patch` reapplies the
+  Dell GNVS fix on system resume paths.
+- `0903-5290-tps68470-restore-i2c-bridge-after-hibernate.patch` restores the
+  TPS68470 secondary I2C bridge after S4.
+- `0904-5290-tps68470-replay-child-state-after-hibernate.patch` replays the
+  TPS68470 clock, regulator selector and camera GPIO child state lost across
+  hibernate.
 
 Check the currently booted kernel:
 
@@ -244,6 +264,9 @@ Check the currently booted kernel:
 If the checker does not find the DW9714 system-sleep strings or the
 `i2c-INT3477:00-VCM` board-data string in the installed modules, rebuild and
 install the kernel again from this full patch set.
+
+For the investigation history and dead-end hypotheses behind the hibernate fix,
+see [HIBERNATION_ISSUE.md](/home/vitovt/Desktop/Dev/DELL5290/dell-5290-camera-kernel/HIBERNATION_ISSUE.md).
 
 ## Desktop Applications
 
@@ -430,21 +453,24 @@ official Ubuntu kernel packages already installed on the system.
 
 ### Upstream Status
 
-The original Dell Latitude 5285 work is still moving upstream.  As of
-2026-04-28, the latest public series is v6 and it differs from this tested
-5290 patch set in a few important ways:
+The original Dell Latitude 5285 work is still moving upstream.  This repository
+keeps the upstream/backport-style pieces at the start of `patches/series` and
+the Dell 5290 local policy/quirk patches in the later numbered ranges.  This
+keeps future upstream refreshes reviewable without hiding the local hardware
+workarounds.
 
-- v6 replaces the early GNVS write workaround with static TPS68470 clock
-  consumers in board data.  This is cleaner for upstream, but the local 5290
-  kernel still keeps the GNVS fix because it is the path tested on this
-  hardware.
-- v6 maps OV8858 I/O power through the standard `dovdd` supply and does not
-  add a driver-specific `vsio` supply.  The local 5290 patch still requests
-  `vsio` explicitly because this setup was tested with the Dell 5290 secondary
-  I2C passthrough.
+The local 5290 patch set still differs from the public 5285 work in a few
+important ways:
+
+- The local kernel keeps the Dell GNVS fix because it is still required on the
+  tested 5290 hardware.
+- OV8858 I/O power is requested through the tested local `vsio` path.
 - The local 5290 board data also adds the DW9714 `vcc` regulator consumer for
   `i2c-INT3477:00-VCM`; this fixed repeated VCM I2C failures on the 5290 and
   is not present in the 5285 series.
+- Hibernate requires 5290-specific TPS68470 restore handling.  Restoring only
+  the secondary I2C bridge was not sufficient; the working fix also replays the
+  PMIC clock, regulator selector and camera GPIO child state.
 
 Do not replace the local patch set with a newer upstream 5285 revision without
 rebuilding and retesting both cameras and the virtual-camera bridge.
